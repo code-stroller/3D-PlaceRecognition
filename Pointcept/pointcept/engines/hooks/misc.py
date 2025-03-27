@@ -24,7 +24,7 @@ from pointcept.utils.comm import is_main_process, synchronize
 from pointcept.utils.cache import shared_dict
 from pointcept.utils.scheduler import CosineScheduler
 import pointcept.utils.comm as comm
-from pointcept.engines.test import TESTERS
+
 
 from .default import HookBase
 from .builder import HOOKS
@@ -256,6 +256,7 @@ class PreciseEvaluator(HookBase):
         )
         torch.cuda.empty_cache()
         cfg = self.trainer.cfg
+        from pointcept.engines.test import TESTERS
         tester = TESTERS.build(
             dict(type=cfg.test.type, cfg=cfg, model=self.trainer.model)
         )
