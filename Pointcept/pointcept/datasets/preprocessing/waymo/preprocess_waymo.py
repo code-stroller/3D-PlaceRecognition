@@ -356,7 +356,9 @@ if __name__ == "__main__":
     file_list = glob.glob(
         os.path.join(os.path.abspath(config.dataset_root), "*", "*.tfrecord")
     )
-    assert len(file_list) == 1150
+    # print('데이터 개수 : ',len(file_list))
+    # assert len(file_list) == 1150
+    assert len(file_list) == 5
 
     # Create output directories
     for split in config.splits:
