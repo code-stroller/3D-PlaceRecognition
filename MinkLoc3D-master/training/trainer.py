@@ -10,7 +10,7 @@ import torch
 import pickle
 import tqdm
 import pathlib
-
+import fix_distutils
 from torch.utils.tensorboard import SummaryWriter
 
 from eval.evaluate import evaluate, print_eval_stats

@@ -4,9 +4,9 @@ num_points = 4096
 dataset_folder = /home/dohyeong/3D-PlaceRecognition/MinkLoc3D-master/benchmark_datasets
 
 [TRAIN]
-num_workers = 4
-batch_size = 16
-batch_size_limit = 256
+num_workers = 0
+batch_size = 1
+batch_size_limit = 16
 batch_expansion_rate = 1.4
 batch_expansion_th = 0.7
 

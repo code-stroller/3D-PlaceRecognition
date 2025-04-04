@@ -1,2 +1,5 @@
 Pointcept/pointcept/datasets/processed_waymo_dataset
 Pointcept/pointcept/datasets/waymo_dataset
+*.bin
+*.pickle
+*.csv
