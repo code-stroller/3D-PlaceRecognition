@@ -62,10 +62,10 @@ def construct_query_and_database_sets(base_path, runs_folder, folders, pointclou
         for index, row in df_locations.iterrows():
             # entire business district is in the test set
             if(output_name == "business"):
-                df_test = df_test.append(row, ignore_index=True)
+                df_test = pd.concat([df_test, pd.DataFrame([row])], ignore_index=True)
             elif(check_in_test_set(row['northing'], row['easting'], p, x_width, y_width)):
-                df_test = df_test.append(row, ignore_index=True)
-            df_database = df_database.append(row, ignore_index=True)
+                df_test = pd.concat([df_test, pd.DataFrame([row])], ignore_index=True)
+            df_database = pd.concat([df_database, pd.DataFrame([row])], ignore_index=True)
 
         database_tree = KDTree(df_database[['northing', 'easting']])
         test_tree = KDTree(df_test[['northing', 'easting']])

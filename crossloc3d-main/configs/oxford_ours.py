@@ -18,17 +18,17 @@ scheduler_cfg = dict(
     milestones=(80, 120, 160)
 )
 
-end_epoch = 200
+end_epoch = 50
 
 train_cfg = dict(
     save_per_epoch=10,
     val_per_epoch=5,
     batch_sampler_type='ExpansionBatchSampler',
     batch_sampler_cfg=dict(
-        max_batch_size=128,
+        max_batch_size=32,
         batch_size_expansion_rate=1.4,
         batch_expansion_threshold=0.7,
-        batch_size=32,
+        batch_size=16,
         shuffle=True,
         drop_last=True,
     ),

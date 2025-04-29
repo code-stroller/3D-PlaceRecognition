@@ -80,9 +80,9 @@ for folder in folders:
 
     for index, row in df_locations.iterrows():
         if(check_in_test_set(row['northing'], row['easting'], p, x_width, y_width)):
-            df_test = df_test.append(row, ignore_index=True)
+            df_test = pd.concat([df_test, pd.DataFrame([row])], ignore_index=True)
         else:
-            df_train = df_train.append(row, ignore_index=True)
+            df_train = pd.concat([df_train, pd.DataFrame([row])], ignore_index=True)
 
 print("Number of training submaps: "+str(len(df_train['file'])))
 print("Number of non-disjoint test submaps: "+str(len(df_test['file'])))

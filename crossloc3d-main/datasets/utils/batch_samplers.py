@@ -71,7 +71,7 @@ class ExpansionBatchSampler(torch.utils.data.Sampler):
 
             selected_element = random.choice(list(unused_elements_ndx))
             unused_elements_ndx.pop(selected_element)
-            positives = self.dataset.get_pos_pairs(selected_element)
+            positives = list(self.dataset.get_pos_pairs(selected_element))
             if len(positives) == 0:
                 continue
 
