@@ -3,3 +3,4 @@ Pointcept/pointcept/datasets/waymo_dataset
 *.bin
 *.pickle
 *.csv
+crossloc3d-main/configs/best_oxford_ours.py
