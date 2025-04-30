@@ -6,7 +6,8 @@ import numpy as np
 from torch.autograd import Variable
 
 from .netvlad import NetVladWrapper
-from .transformer import TransformerBlock, DiffTransformerBlock
+# from .transformer import TransformerBlock, DiffTransformerBlock
+from .point_transformer_v3 import PointTransformerV3
 from .pooling import GeM, MAC, SPoC
 
 
@@ -292,6 +293,46 @@ class PointNetfeat(nn.Module):
             return torch.cat([x, pointfeat], 1)
             # return torch.cat([x, pointfeat], 1), trans
 
+class PTV3BackboneWrapper(nn.Module):
+    def __init__(self, cfg):
+        """
+        PointTransformerV3를 래핑하여 (B, N, 3) 입력 → (B, D, N) 출력으로 변환.
+        cfg: backbone_cfg에서 grid_size나 in_channels를 받을 수 있음.
+        """
+        super().__init__()
+        # 입력 포인트 클라우드의 격자 크기 (voxel 크기). 기본값 0.01m 사용.
+        self.grid_size = getattr(cfg, "grid_size", 0.01)
+        # 입력 특징 차원. 기본적으로 XYZ 좌표 3채널 사용.
+        self.in_channels = getattr(cfg, "in_channels", 3)
+        # PointTransformerV3 모델 인스턴스화 (in_channels를 3으로 오버라이드)
+        self.model = PointTransformerV3(in_channels=self.in_channels)
+    
+    def forward(self, x):
+        """
+        x: (B, N, 3) 형태의 배치 포인트 클라우드
+        반환: (B, D, N) 형태의 포인트별 특징
+        """
+        B, N, _ = x.shape
+        # PTv3에 넘기기 위해 배치와 포인트 차원을 펼침
+        coords = x.reshape(-1, 3)                      # (B*N, 3)
+        # 각 포인트에 대한 배치 인덱스 생성
+        batch_idx = torch.arange(B, device=x.device).repeat_interleave(N)
+        # 특징으로 좌표 자체를 사용 (in_channels=3)
+        feats = coords.clone()                         # (B*N, 3)
+        # PTv3 입력용 딕셔너리 생성
+        data_dict = {
+            "coord": coords,           # 원시 좌표
+            "grid_size": self.grid_size,
+            "batch": batch_idx,        # 배치 인덱스
+            "feat": feats              # 입력 특징
+        }
+        # PTv3 순전파
+        point = self.model(data_dict)
+        # PTv3 출력 포인트 특징 추출
+        point_feats = point["feat"]  # (B*N, D)
+        # 다시 (B, D, N) 형태로 변환
+        point_feats = point_feats.view(B, N, -1).permute(0, 2, 1).contiguous()
+        return point_feats
 
 class Ours3DFPN(nn.Module):
     # Feature Pyramid Network (FPN) architecture implementation using Minkowski ResNet building blocks
@@ -396,8 +437,14 @@ class Ours3DFPN(nn.Module):
 class Ours(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.backbone = Ours3DFPN(cfg.backbone_cfg, cfg.quantization_size)
-
+        # self.backbone = Ours3DFPN(cfg.backbone_cfg, cfg.quantization_size)
+        # self.backbone = PointTransformerV3()
+        if getattr(cfg.backbone_cfg, "type", None) == "PTV3":
+            # PTV3BackboneWrapper 사용
+            self.backbone = PTV3BackboneWrapper(cfg.backbone_cfg)
+        else:
+            # 기존 Minkowski FPN 백본
+            self.backbone = Ours3DFPN(cfg.backbone_cfg, cfg.quantization_size)
         assert cfg.backbone_cfg.out_channels == cfg.pool_cfg.in_channels
 
         if cfg.pool_cfg.type == 'Max':
@@ -415,9 +462,11 @@ class Ours(nn.Module):
             raise NotImplementedError(
                 'Pool type has not implemented: {}'.format(cfg.pool_cfg.type))
 
-    def forward(self, x):
-        x = self.backbone(x)
-        # assert len(x.shape) == 2
-        # x: [bs, feat_size]
-        x = self.pool(x)
+    def forward(self, data):
+        # CrossLoc3D training loop은 (pcd_sparse_list, raw_pcd_tensor) 튜플을 넘겨줍니다.
+        _, raw_pcd = data
+        # 래퍼에는 반드시 (B, N, 3) 형태인 raw_pcd 만 전달해야 합니다.
+        x = self.backbone(raw_pcd)  # -> x.shape == (B, D, N)
+        # NetVLAD 풀링
+        x = self.pool(x)            # -> x.shape == (B, out_channels)
         return x
