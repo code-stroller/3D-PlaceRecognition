@@ -67,6 +67,20 @@ class Ours(nn.Module):
             self.pool = GeM(pool_cfg)
         elif pool_cfg.type == 'NetVlad':
             self.pool = NetVladWrapper(pool_cfg)
+            D = cfg.backbone_cfg.dec_channels[0]   # 실제 backbone 출력 차원
+            M = cfg.pool_cfg.in_channels          # 원하는 pool 입력 차원
+            if D != M:
+                C_mid = min(D, M) * 2  # 중간 채널 수, 예: D와 M 중 작은 쪽의 2배
+                self.project = nn.Sequential(
+                    nn.Conv1d(D,   C_mid, kernel_size=1, bias=False),
+                    nn.BatchNorm1d(C_mid),
+                    nn.ReLU(inplace=True),
+                    nn.Conv1d(C_mid, M,    kernel_size=1, bias=False),
+                    nn.BatchNorm1d(M),
+                    nn.ReLU(inplace=True),
+                )
+            else:
+                self.project = None
         else:
             raise ValueError(f"Unknown pool type {pool_cfg.type}")
 
@@ -76,4 +90,6 @@ class Ours(nn.Module):
         # raw_pcd: (B, N, 3)
         x = self.backbone(raw_pcd)   # -> (B, N, D)
         x = x.permute(0, 2, 1)       # -> (B, D, N) for NetVLAD / MAC / etc.
+        if self.project is not None:
+            x = self.project(x)       # -> (B, M, N)
         return self.pool(x)          # -> (B, out_channels)
