@@ -720,34 +720,84 @@ class SerializedUnpooling(PointModule):
         out_channels,
         norm_layer=None,
         act_layer=None,
-        traceable=False,  # record parent and cluster
+        traceable=False,         # if True, prepare for cross-attention (do not fuse immediately)
+        cross_attn_proj=True,    # if True, apply 1x1 Linear projection when channels differ
     ):
         super().__init__()
-        self.proj = PointSequential(nn.Linear(in_channels, out_channels))
-        self.proj_skip = PointSequential(nn.Linear(skip_channels, out_channels))
-
-        if norm_layer is not None:
-            self.proj.add(norm_layer(out_channels))
-            self.proj_skip.add(norm_layer(out_channels))
-
-        if act_layer is not None:
-            self.proj.add(act_layer())
-            self.proj_skip.add(act_layer())
-
+        # 1x1 projection layers (only if needed or requested)
+        if cross_attn_proj and (in_channels != out_channels or skip_channels != out_channels):
+            self.proj = PointSequential(nn.Linear(in_channels, out_channels))
+            self.proj_skip = PointSequential(nn.Linear(skip_channels, out_channels))
+            if norm_layer is not None:
+                self.proj.add(norm_layer(out_channels))
+                self.proj_skip.add(norm_layer(out_channels))
+            if act_layer is not None:
+                self.proj.add(act_layer())
+                self.proj_skip.add(act_layer())
+        else:
+            # If projection not used, channels must already match
+            assert in_channels == out_channels and skip_channels == out_channels, \
+                "cross_attn_proj is False but channel dimensions differ"
+            self.proj = PointSequential()
+            self.proj_skip = PointSequential()
+            if norm_layer is not None:
+                self.proj.add(norm_layer(out_channels))
+                self.proj_skip.add(norm_layer(out_channels))
+            if act_layer is not None:
+                self.proj.add(act_layer())
+                self.proj_skip.add(act_layer())
         self.traceable = traceable
 
     def forward(self, point):
-        assert "pooling_parent" in point.keys()
-        assert "pooling_inverse" in point.keys()
-        parent = point.pop("pooling_parent")
-        inverse = point.pop("pooling_inverse")
-        point = self.proj(point)
-        parent = self.proj_skip(parent)
-        parent.feat = parent.feat + point.feat[inverse]
-
-        if self.traceable:
-            parent["unpooling_parent"] = point
+        assert "pooling_parent" in point.keys() and "pooling_inverse" in point.keys()
+        parent = point.pop("pooling_parent")      # encoder skip-level Point
+        inverse = point.pop("pooling_inverse")    # mapping from parent (fine) to point (coarse)
+        point = self.proj(point)                 # project decoder (coarse) features
+        parent = self.proj_skip(parent)          # project encoder (skip) features
+        if not self.traceable:
+            # Default behavior: directly add projected features (skip fusion)
+            parent.feat = parent.feat + point.feat[inverse]
+        else:
+            # **Cross-attention mode:** store coarse features and inverse for later fusion
+            parent["unpooling_parent"] = point      # save decoder (coarse) Point
+            parent["unpooling_inverse"] = inverse   # save mapping for attention fusion
         return parent
+
+class CrossAttnFuse(PointModule):
+    """Fuse skip and decoder features via cross-attention (decoder Q, encoder K/V)."""
+    def __init__(self, out_channels, num_heads):
+        super().__init__()
+        # Multi-head cross-attention layer (expects query/key/value embed_dim = out_channels)
+        self.attn = nn.MultiheadAttention(embed_dim=out_channels, num_heads=num_heads, batch_first=True)
+
+    def forward(self, point: Point):
+        # Expect 'unpooling_parent' (decoder coarse Point) and 'unpooling_inverse' in input
+        assert "unpooling_parent" in point.keys() and "unpooling_inverse" in point.keys()
+        coarse = point.pop("unpooling_parent")   # decoder (coarse) Point from the lower resolution
+        inverse = point.pop("unpooling_inverse") # index mapping from coarse to fine points
+        # Prepare query (Q) and key/value (K,V) tensors
+        Q = coarse.feat  # shape: [N_coarse, C]
+        K = point.feat   # shape: [N_fine, C] (skip features)
+        V = point.feat   # use skip features as values as well
+        # Perform cross-attention for each batch separately
+        if "batch" in coarse.keys():
+            coarse_out = torch.empty_like(Q)
+            coarse_batch = coarse.batch; fine_batch = point.batch
+            for b in torch.unique(coarse_batch):
+                # Extract features for batch b
+                q = Q[coarse_batch == b].unsqueeze(0)    # shape [1, N_coarse_b, C]
+                k = K[fine_batch == b].unsqueeze(0)      # shape [1, N_fine_b, C]
+                v = V[fine_batch == b].unsqueeze(0)      # shape [1, N_fine_b, C]
+                # Cross-attention: decoder (queries) attend to encoder (keys/values)
+                out, _ = self.attn(q, k, v)
+                coarse_out[coarse_batch == b] = out.squeeze(0)  # assign outputs back to corresponding indices
+        else:
+            # Single batch (all points together)
+            out, _ = self.attn(Q.unsqueeze(0), K.unsqueeze(0), V.unsqueeze(0))
+            coarse_out = out.squeeze(0)  # shape [N_coarse, C]
+        # Fuse coarse features into fine features using the inverse mapping
+        point.feat = point.feat + coarse_out[inverse]
+        return point
 
 
 class Embedding(PointModule):
@@ -816,6 +866,11 @@ class PointTransformerV3(PointModule):
         pdnorm_adaptive=False,
         pdnorm_affine=True,
         pdnorm_conditions=("ScanNet", "S3DIS", "Structured3D"),
+
+        cross_attn=False,
+        cross_attn_heads=None,
+        cross_attn_proj=True,
+
     ):
         super().__init__()
         self.num_stages = len(enc_depths)
@@ -865,6 +920,11 @@ class PointTransformerV3(PointModule):
             norm_layer=bn_layer,
             act_layer=act_layer,
         )
+
+        self.cross_attn = cross_attn
+        if self.cross_attn:
+            assert cross_attn_heads is not None and len(cross_attn_heads) == (self.num_stages - 1), \
+                "cross_attn_heads length must match number of decoder stages"
 
         # encoder
         enc_drop_path = [
@@ -916,51 +976,51 @@ class PointTransformerV3(PointModule):
 
         # decoder
         if not self.cls_mode:
-            dec_drop_path = [
-                x.item() for x in torch.linspace(0, drop_path, sum(dec_depths))
-            ]
+            dec_drop_path = [x.item() for x in torch.linspace(0, drop_path, sum(dec_depths))]
             self.dec = PointSequential()
             dec_channels = list(dec_channels) + [enc_channels[-1]]
             for s in reversed(range(self.num_stages - 1)):
-                dec_drop_path_ = dec_drop_path[
-                    sum(dec_depths[:s]) : sum(dec_depths[: s + 1])
-                ]
+                dec_drop_path_ = dec_drop_path[sum(dec_depths[:s]) : sum(dec_depths[: s + 1])]
                 dec_drop_path_.reverse()
                 dec = PointSequential()
-                dec.add(
-                    SerializedUnpooling(
-                        in_channels=dec_channels[s + 1],
-                        skip_channels=enc_channels[s],
+                # Up-sampling (SerializedUnpooling) layer
+                dec.add(SerializedUnpooling(
+                    in_channels=dec_channels[s + 1],
+                    skip_channels=enc_channels[s],
+                    out_channels=dec_channels[s],
+                    norm_layer=bn_layer,
+                    act_layer=act_layer,
+                    traceable=self.cross_attn,
+                    cross_attn_proj=cross_attn_proj
+                ), name="up")
+                # **Insert cross-attention fuse layer if enabled**
+                if self.cross_attn:
+                    dec.add(CrossAttnFuse(
                         out_channels=dec_channels[s],
-                        norm_layer=bn_layer,
-                        act_layer=act_layer,
-                    ),
-                    name="up",
-                )
+                        num_heads=cross_attn_heads[s]
+                    ), name="cross_attn")
+                # Decoder transformer blocks
                 for i in range(dec_depths[s]):
-                    dec.add(
-                        Block(
-                            channels=dec_channels[s],
-                            num_heads=dec_num_head[s],
-                            patch_size=dec_patch_size[s],
-                            mlp_ratio=mlp_ratio,
-                            qkv_bias=qkv_bias,
-                            qk_scale=qk_scale,
-                            attn_drop=attn_drop,
-                            proj_drop=proj_drop,
-                            drop_path=dec_drop_path_[i],
-                            norm_layer=ln_layer,
-                            act_layer=act_layer,
-                            pre_norm=pre_norm,
-                            order_index=i % len(self.order),
-                            cpe_indice_key=f"stage{s}",
-                            enable_rpe=enable_rpe,
-                            enable_flash=enable_flash,
-                            upcast_attention=upcast_attention,
-                            upcast_softmax=upcast_softmax,
-                        ),
-                        name=f"block{i}",
-                    )
+                    dec.add(Block(
+                        channels=dec_channels[s],
+                        num_heads=dec_num_head[s],
+                        patch_size=dec_patch_size[s],
+                        mlp_ratio=mlp_ratio,
+                        qkv_bias=qkv_bias,
+                        qk_scale=qk_scale,
+                        attn_drop=attn_drop,
+                        proj_drop=proj_drop,
+                        drop_path=dec_drop_path_[i],
+                        norm_layer=ln_layer,
+                        act_layer=act_layer,
+                        pre_norm=pre_norm,
+                        order_index=i % len(self.order),
+                        cpe_indice_key=f"stage{s}",
+                        enable_rpe=enable_rpe,
+                        enable_flash=enable_flash,
+                        upcast_attention=upcast_attention,
+                        upcast_softmax=upcast_softmax,
+                    ), name=f"block{i}")
                 self.dec.add(module=dec, name=f"dec{s}")
 
     def forward(self, data_dict):
@@ -974,9 +1034,8 @@ class PointTransformerV3(PointModule):
         point = Point(data_dict)
         point.serialization(order=self.order, shuffle_orders=self.shuffle_orders)
         point.sparsify()
-
         point = self.embedding(point)
         point = self.enc(point)
         if not self.cls_mode:
-            point = self.dec(point)
+            point = self.dec(point)  # decoder forward pass (includes cross-attention if enabled)
         return point
