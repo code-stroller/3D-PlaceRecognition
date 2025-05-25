@@ -5,4 +5,6 @@ from .default import (
     z_order_decode,
     hilbert_encode,
     hilbert_decode,
+    hz_curve_encode,
+    hz_curve_decode,
 )
