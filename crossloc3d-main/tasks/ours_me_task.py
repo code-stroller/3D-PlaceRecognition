@@ -34,12 +34,14 @@ class OursMETask(BaseMETask):
             negatives_mask=batch_data['neg_mask']
         )
         loss.backward()
+        # num_non_zero_triplets / num_triplets 키가 없으면 num_pairs 로 대체
+        num_pairs = loss_stats.get('num_pairs', 0)
         return {
-            'loss': loss_stats['loss'],
-            'mean_pos_pair_dist': loss_stats['mean_pos_pair_dist'],
-            'mean_neg_pair_dist': loss_stats['mean_neg_pair_dist'],
-            'num_non_zero_triplets': loss_stats['num_non_zero_triplets'],
-            'num_triplets': loss_stats['num_triplets']
+            'loss':                   loss_stats.get('loss', 0.0),
+            'mean_pos_pair_dist':     loss_stats.get('mean_pos_pair_dist', 0.0),
+            'mean_neg_pair_dist':     loss_stats.get('mean_neg_pair_dist', 0.0),
+            'num_non_zero_triplets':  loss_stats.get('num_non_zero_triplets', num_pairs),
+            'num_triplets':           loss_stats.get('num_triplets', num_pairs),
         }
 
     def _eval_step(self, meta_data, batch_data, **kwargs):

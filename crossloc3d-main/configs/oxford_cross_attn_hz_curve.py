@@ -5,6 +5,13 @@ _base_ = [
 
 task_type = 'ours_me'
 
+loss_type = 'CircleLoss'
+loss_cfg = dict(
+    m = 0.3,             # CircleLoss margin (결정경계 여유 변수)
+    gamma = 256,          # CircleLoss 스케일 계수
+    # normalize_embeddings 항목은 명시하지 않아도 코사인 유사도 사용으로 자동 정규화됨
+)
+
 # Optimizer settings
 optimizer_type = 'Adam'
 optimizer_cfg = dict(
@@ -46,22 +53,6 @@ eval_cfg = dict(
     ),
     num_workers=0,
     normalize_embeddings=False,  # Normalize before KD-Tree
-)
-
-# 1) BatchHardTripletMarginLoss 예시
-# loss_cfg = dict(
-#     type='BatchHardTripletMarginLoss',
-#     margin=0.3,                    # Triplet margin
-#     distance='cosine',             # 거리 함수 (e.g. 'euclidean' / 'cosine')
-#     normalize_embeddings=True,     # 임베딩 정규화 여부
-# )
-
-# 2) BatchHardContrastiveLoss 예시
-loss_cfg = dict(
-    type='BatchHardContrastiveLoss',
-    margin=1.0,                   # Contrastive margin
-    distance='euclidean',
-    normalize_embeddings=False,
 )
 
 # Model definition
