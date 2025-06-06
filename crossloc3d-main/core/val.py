@@ -14,16 +14,16 @@ def val(cfg, log, task=None):
         assert cfg.resume_from is not None
         task_state = task.load(cfg.resume_from)
 
-    log.info(
-        '++++++++++++++++  Evaluating %s dataset  ++++++++++++++++' % cfg.dataset_type)
+    if isinstance(cfg.dataset_type, (list, tuple)):
+        dataset_types = cfg.dataset_type
+    else:
+        dataset_types = [cfg.dataset_type]
 
-    (db_data_loader, _), (q_data_loader, _) = create_dataloaders(
-        dataset_type=cfg.dataset_type,
-        cfg=cfg,
-        subset_types=('database', 'queries'),
-        log=log,
-        debug=cfg.debug
-    )
-
-    metrics = eval(cfg, log, db_data_loader, q_data_loader, task)
-    return metrics
+    metrics_all = []
+    for dt in dataset_types:
+        log.info('++++++++ Evaluating %s dataset ++++++++' % dt)
+        (db_dl, _), (q_dl, _) = create_dataloaders(
+            dataset_type=dt, cfg=cfg, subset_types=('database','queries'), log=log, debug=cfg.debug)
+        m = eval(cfg, log, db_dl, q_dl, task)
+        metrics_all.append(m)
+    return metrics_all

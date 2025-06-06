@@ -1,6 +1,6 @@
 _base_ = [
     './base_cfg.py',
-    './dataset_cfgs/oxford_cfg.py'
+    './dataset_cfgs/oxford_cfg.py',
 ]
 
 task_type = 'ours_me'
