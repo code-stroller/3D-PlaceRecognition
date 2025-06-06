@@ -5,11 +5,10 @@ _base_ = [
 
 task_type = 'ours_me'
 
-loss_type = 'CircleLoss'
+loss_type = 'BatchHardTripletMarginLoss'
 loss_cfg = dict(
-    m = 0.3,             # CircleLoss margin (결정경계 여유 변수)
-    gamma = 256,          # CircleLoss 스케일 계수
-    # normalize_embeddings 항목은 명시하지 않아도 코사인 유사도 사용으로 자동 정규화됨
+    margin=0.2,
+    normalize_embeddings=False
 )
 
 # Optimizer settings
@@ -27,7 +26,7 @@ scheduler_cfg = dict(
     milestones=(80, 120, 160)  # Decay epochs (tunable)
 )
 
-end_epoch = 400  # Total number of training epochs (tunable)
+end_epoch = 1  # Total number of training epochs (tunable)
 
 # Training data settings
 train_cfg = dict(

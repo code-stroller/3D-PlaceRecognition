@@ -4,3 +4,6 @@ Pointcept/pointcept/datasets/waymo_dataset
 *.pickle
 *.csv
 crossloc3d-main/configs/best_oxford_ours.py
+MinkLoc3Dv2-main/weights
+MinkLoc3Dv2-main/training/wandb
+*.pt
