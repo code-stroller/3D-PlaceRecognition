@@ -787,7 +787,7 @@ class PointTransformerV3(PointModule):
     def __init__(
         self,
         in_channels=6,
-        order=("z", "z-trans", "hilbert", "hilbert-trans"),
+        order=("z", "z-trans", "hilbert", "hilbert-trans", "hz", "hz-trans"),
         stride=(2, 2, 2, 2),
         enc_depths=(2, 2, 2, 6, 2),
         enc_channels=(32, 64, 128, 256, 512),
@@ -809,7 +809,7 @@ class PointTransformerV3(PointModule):
         enable_flash=True,
         upcast_attention=False,
         upcast_softmax=False,
-        cls_mode=False,
+        cls_mode=True,
         pdnorm_bn=False,
         pdnorm_ln=False,
         pdnorm_decouple=True,

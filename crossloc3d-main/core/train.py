@@ -102,13 +102,29 @@ def train(cfg, log):
             log.info('[Epoch%4d/%4d] Start validating ...' %
                      (epoch, end_epoch))
             epoch_start_time = time()
-            metrics = val(cfg, log, task)
+            # --- 원래는 val()이 리스트를 반환하므로, 첫 번째 Metrics 객체만 사용하도록 수정 ---
+            metrics_list = val(cfg, log, task)
+            metrics = metrics_list[0]
             epoch_end_time = time()
             log.info(
                 '[Epoch%4d/%4d] Validating time= %.3fs' %
                 (epoch, end_epoch, epoch_end_time - epoch_start_time))
 
-            if metrics.better_than(best_metrics):
+            # ─── “오직 Oxford Recall@1%”로 best checkpoint 고르기 ────────────────────
+            # 1) metrics 안에서 Oxford/Recall@1% 값을 꺼냅니다.
+            #    (아래는 state_dict()에서 직접 꺼내는 예시입니다.)
+            curr_oxford_recall = metrics.state_dict().get('oxford/Recall@1%', None)
+
+            if best_metrics is None:
+                better = True
+            else:
+                prev_oxford_recall = best_metrics.state_dict().get('oxford/Recall@1%', None)
+                # “이전보다 현재 값이 크면” True
+                better = (curr_oxford_recall is not None and
+                          prev_oxford_recall is not None and
+                          curr_oxford_recall > prev_oxford_recall)
+
+            if better:
                 best_metrics = metrics
                 save_dir = osp.join(cfg.work_dir, 'best_ckpt.pth')
                 task.save(

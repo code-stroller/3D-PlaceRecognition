@@ -3,6 +3,26 @@ _base_ = [
     './dataset_cfgs/oxford_cfg.py',
 ]
 
+# _base_ = [
+#     './base_cfg.py',
+#     './dataset_cfgs/refine_cfg.py',
+# ]
+
+# _base_ = [
+#     './base_cfg.py',
+#     './dataset_cfgs/business_cfg.py',
+# ]
+
+# _base_ = [
+#     './base_cfg.py',
+#     './dataset_cfgs/university_cfg.py',
+# ]
+
+# _base_ = [
+#     './base_cfg.py',
+#     './dataset_cfgs/residential_cfg.py',
+# ]
+
 task_type = 'ours_me'
 
 loss_type = 'BatchHardTripletMarginLoss'
@@ -10,6 +30,7 @@ loss_cfg = dict(
     margin=0.2,
     normalize_embeddings=False
 )
+
 
 # Optimizer settings
 optimizer_type = 'Adam'
@@ -26,7 +47,7 @@ scheduler_cfg = dict(
     milestones=(80, 120, 160)  # Decay epochs (tunable)
 )
 
-end_epoch = 1  # Total number of training epochs (tunable)
+end_epoch = 400  # Total number of training epochs (tunable)
 
 # Training data settings
 train_cfg = dict(
@@ -38,10 +59,10 @@ train_cfg = dict(
         batch_size_expansion_rate=1.4, # Expansion rate
         batch_expansion_threshold=0.7,  # Threshold
         batch_size=32,                 # Base batch size (tunable)
-        shuffle=True,
+        shuffle=False,
         drop_last=True,
     ),
-    num_workers=0,      # DataLoader workers (adjust for your GPU)
+    num_workers=8,      # DataLoader workers (adjust for your GPU)
 )
 
 # Evaluation data settings
@@ -62,7 +83,7 @@ model_cfg = dict(
         in_channels=3,            # Input feature dim (XYZ)
         grid_size=0.01,           # Voxel size (tunable)
         # --- PTv3 architecture parameters (tunable) ---
-        order=("z", "z-trans", "hilbert", "hilbert-trans", "hz", "hz-trans"),   # Serialization orders
+        order=("z", "z-trans", "hilbert", "hilbert-trans", "hz", "hz-trans"),   # Serialization orders # order=("z", "z-trans", "hilbert", "hilbert-trans", "hz", "hz-trans")
         stride=(2,2,2,2),
         enc_depths=(2,2,2,6,2),
         enc_channels=(32, 64, 128, 256, 512),
